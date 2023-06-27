@@ -60,7 +60,7 @@ def main():
 
                 # Has this been deleted?
                 if record.find(".//oai:header[@status='deleted']", ns):
-                    print("    record deleted")
+                    print("    INFO: record deleted")
                     continue
 
                 # Get basic info
@@ -83,26 +83,39 @@ def main():
                 #    fname = file.attrib['href']
                 fnames = { f.attrib['href']: os.path.join(pdftmpdir.name, f'{i:04}.pdf')
                           for (i,f) in enumerate(files) }
-                # Download and save
-                for url, fname in fnames.items():
-                    open(fname, 'wb').write(requests.get(url).content)
-                # Combine all PDFs
-                pdf_combined = join(pdftmpdir.name, 'combined.pdf')
-                cmd = ['pdftk', ] + list(fnames.values()) + ['cat', 'output', pdf_combined]
-                #print(cmd)
-                #import IPython ; IPython.embed()
-                subprocess.call(cmd)
-                # combining may not succeed.  In which case, ignore.
-                if not os.access(pdf_combined, os.F_OK):
-                    print('    PDF not combined')
-                    continue
-                combined = open(pdf_combined, 'rb').read()
-                os.unlink(pdf_combined)
+                if len(fnames) == 1:
+                    url = next(iter(fnames))
+                    try:
+                        full_pdf = requests.get(url).content
+                    except UnicodeDecodeError:
+                        print("   ERROR: UnicodeError when downloading")
+                        continue
+                else:
+                    # Download and save
+                    for url, fname in fnames.items():
+                        try:
+                            content = requests.get(url).content
+                        except UnicodeDecodeError:
+                            print("   ERROR: UnicodeError when downloading")
+                            continue
+                        open(fname, 'wb').write(content)
+                    # Combine all PDFs
+                    pdf_combined = join(pdftmpdir.name, 'combined.pdf')
+                    cmd = ['pdftk', ] + list(fnames.values()) + ['cat', 'output', pdf_combined]
+                    #print(cmd)
+                    #import IPython ; IPython.embed()
+                    subprocess.call(cmd)
+                    # combining may not succeed.  In which case, ignore.
+                    if not os.access(pdf_combined, os.F_OK):
+                        print('    ERROR: PDF not combined')
+                        continue
+                    full_pdf = open(pdf_combined, 'rb').read()
+                    os.unlink(pdf_combined)
 
                 # Save to zipfile
-                data.open(pdf_combined_name, 'w').write(combined)
+                data.open(pdf_combined_name, 'w').write(full_pdf)
                 data.open(f'record/{year}/{identifier}.xml', 'w').write(record_str)
-
+                del full_pdf
 
 
             # Find resumption
