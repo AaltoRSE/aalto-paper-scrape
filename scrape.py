@@ -35,7 +35,7 @@ def main():
 
     with zipfile.ZipFile(args.output, 'a') as data:
         namelist = set(data.namelist())
-        print(namelist)
+        #print(namelist)
 
 
         for i in itertools.count():
@@ -49,7 +49,7 @@ def main():
                 "url": url,
                 "page": r.text,
             }
-            data.open(f'listing/{i:06d}.json', 'w').write(json.dumps(page_data).encode())
+            #data.open(f'listing/{i:06d}.json', 'w').write(json.dumps(page_data).encode())
 
             # Get all records
             records = page.findall(".//oai:record", ns)
@@ -57,6 +57,13 @@ def main():
             # Parse all records
             for record in records:
                 identifier = record.find('.//oai:identifier', ns).text.replace('/', '%2F')
+
+                # Has this been deleted?
+                if record.find(".//oai:header[@status='deleted']", ns):
+                    print("    record deleted")
+                    continue
+
+                # Get basic info
                 date = dateutil.parser.parse(record.find('.//dcterms:issued', ns).text)
                 year = date.year
                 print(f'    {N_papers:-6} {year} {identifier}')
@@ -67,7 +74,6 @@ def main():
                 if pdf_combined_name in namelist:
                     print('    already present')
                     continue
-
 
                 #abstract = record.find('.//dcterms:abstract', ns).text
                 record_str = ET.tostring(record)
@@ -86,7 +92,12 @@ def main():
                 #print(cmd)
                 #import IPython ; IPython.embed()
                 subprocess.call(cmd)
+                # combining may not succeed.  In which case, ignore.
+                if not os.access(pdf_combined, os.F_OK):
+                    print('    PDF not combined')
+                    continue
                 combined = open(pdf_combined, 'rb').read()
+                os.unlink(pdf_combined)
 
                 # Save to zipfile
                 data.open(pdf_combined_name, 'w').write(combined)
