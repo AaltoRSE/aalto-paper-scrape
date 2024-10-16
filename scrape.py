@@ -20,6 +20,8 @@ def main():
     parser.add_argument('output')
     parser.add_argument('--max-iter')
     parser.add_argument('--verbose', '-v')
+    parser.add_argument('--pdf', action='store_true')
+    parser.add_argument('--meta', action='store_true')
     args = parser.parse_args()
 
     ns = {
@@ -34,6 +36,7 @@ def main():
     pdftmpdir = tempfile.TemporaryDirectory(dir=os.environ['XDG_RUNTIME_DIR'], prefix='scrape')
 
     with zipfile.ZipFile(args.output, 'a') as data:
+      with open(args.output+'.meta', 'a') as metadata:
         namelist = set(data.namelist())
         #print(namelist)
 
@@ -69,53 +72,60 @@ def main():
                 print(f'    {N_papers:-6} {year} {identifier}')
                 N_papers += 1
 
+                #abstract = record.find('.//dcterms:abstract', ns).text
+                record_str = ET.tostring(record)
+                import IPython ; IPython.embed() ; exit()
+
+
+                ##
+                ## PDFs
+                ##
                 # Already in archive?
                 pdf_combined_name = f'pdf-combined/{year}/{identifier}.pdf'
                 if pdf_combined_name in namelist:
                     print('    already present')
                     continue
-
-                #abstract = record.find('.//dcterms:abstract', ns).text
-                record_str = ET.tostring(record)
-
-                files = record.findall('.//kk:file', ns)
-                #for file in files:
-                #    fname = file.attrib['href']
-                fnames = { f.attrib['href']: os.path.join(pdftmpdir.name, f'{i:04}.pdf')
-                          for (i,f) in enumerate(files) }
-                if len(fnames) == 1:
-                    url = next(iter(fnames))
-                    try:
-                        full_pdf = requests.get(url).content
-                    except UnicodeDecodeError:
-                        print("   ERROR: UnicodeError when downloading")
-                        continue
+                if not args.pdf:
+                    continue
                 else:
-                    # Download and save
-                    for url, fname in fnames.items():
+                    files = record.findall('.//kk:file', ns)
+                    #for file in files:
+                    #    fname = file.attrib['href']
+                    fnames = { f.attrib['href']: os.path.join(pdftmpdir.name, f'{i:04}.pdf')
+                              for (i,f) in enumerate(files) }
+                    if len(fnames) == 1:
+                        url = next(iter(fnames))
                         try:
-                            content = requests.get(url).content
+                            full_pdf = requests.get(url).content
                         except UnicodeDecodeError:
                             print("   ERROR: UnicodeError when downloading")
                             continue
-                        open(fname, 'wb').write(content)
-                    # Combine all PDFs
-                    pdf_combined = join(pdftmpdir.name, 'combined.pdf')
-                    cmd = ['pdftk', ] + list(fnames.values()) + ['cat', 'output', pdf_combined]
-                    #print(cmd)
-                    #import IPython ; IPython.embed()
-                    subprocess.call(cmd)
-                    # combining may not succeed.  In which case, ignore.
-                    if not os.access(pdf_combined, os.F_OK):
-                        print('    ERROR: PDF not combined')
-                        continue
-                    full_pdf = open(pdf_combined, 'rb').read()
-                    os.unlink(pdf_combined)
+                    else:
+                        # Download and save
+                        for url, fname in fnames.items():
+                            try:
+                                content = requests.get(url).content
+                            except UnicodeDecodeError:
+                                print("   ERROR: UnicodeError when downloading")
+                                continue
+                            open(fname, 'wb').write(content)
+                        # Combine all PDFs
+                        pdf_combined = join(pdftmpdir.name, 'combined.pdf')
+                        cmd = ['pdftk', ] + list(fnames.values()) + ['cat', 'output', pdf_combined]
+                        #print(cmd)
+                        #import IPython ; IPython.embed()
+                        subprocess.call(cmd)
+                        # combining may not succeed.  In which case, ignore.
+                        if not os.access(pdf_combined, os.F_OK):
+                            print('    ERROR: PDF not combined')
+                            continue
+                        full_pdf = open(pdf_combined, 'rb').read()
+                        os.unlink(pdf_combined)
 
-                # Save to zipfile
-                data.open(pdf_combined_name, 'w').write(full_pdf)
-                data.open(f'record/{year}/{identifier}.xml', 'w').write(record_str)
-                del full_pdf
+                    # Save to zipfile
+                    data.open(pdf_combined_name, 'w').write(full_pdf)
+                    data.open(f'record/{year}/{identifier}.xml', 'w').write(record_str)
+                    del full_pdf
 
 
             # Find resumption
